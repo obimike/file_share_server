@@ -4,6 +4,12 @@ const bodyParser = require("body-parser");
 const jwt = require("jsonwebtoken");
 const { createClient } = require("@supabase/supabase-js");
 
+const multer = require("multer");
+const fs = require("fs");
+const path = require("path");
+
+const upload = multer({ dest: "uploads/" });
+
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
@@ -16,9 +22,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Create a new user
 app.post("/signup", async (req, res) => {
-  const { email, password, display_name } = req.body;
-
-  console.log(email);
+  const { email, password, displayName } = req.body;
 
   try {
     // Sign up user with Supabase auth
@@ -27,8 +31,7 @@ app.post("/signup", async (req, res) => {
       password,
       options: {
         data: {
-          display_name: display_name,
-          phone: 234,
+          display_name: displayName,
         },
       },
     });
@@ -61,23 +64,32 @@ app.post("/login", async (req, res) => {
       data: { user },
     } = await supabase.auth.getUser();
 
-    console.log(user.user_metadata);
-    console.log(user.email);
-
     // Generate JWT using your secret key
     const secret = "God is able 100%, Ask anybody"; // Replace with a strong secret key
     const payload = { user_id: data.user.id };
     const token = jwt.sign(payload, secret);
 
-    res.json({ token });
+    console.log("Logged in with: ", user.email);
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        display_name: user.user_metadata.display_name,
+        email: user.user_metadata.email,
+      },
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error });
   }
 });
 
+// token verification function
 const verifyJWT = (req, res, next) => {
   const authHeader = req.headers.authorization;
+
+  console.log(authHeader);
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -86,7 +98,7 @@ const verifyJWT = (req, res, next) => {
   const token = authHeader.split(" ")[1];
 
   try {
-    const secret = "YOUR_JWT_SECRET";
+    const secret = "God is able 100%, Ask anybody";
     const decoded = jwt.verify(token, secret);
     req.user = decoded; // Attach decoded user ID to the request object
     next();
@@ -95,6 +107,7 @@ const verifyJWT = (req, res, next) => {
   }
 };
 
+// check if user is logged in
 app.get("/protected", verifyJWT, (req, res) => {
   // Access user ID from req.user
   const userId = req.user.user_id;
@@ -102,6 +115,7 @@ app.get("/protected", verifyJWT, (req, res) => {
   res.json({ message: "Welcome, authorized user!" });
 });
 
+// log out route
 app.post("/logout", async (req, res) => {
   // Clear any stored user session data (e.g., in req.user)
   req.user = null;
@@ -111,6 +125,44 @@ app.post("/logout", async (req, res) => {
   res.status(200).json({ message: "Logged out successfully!" });
 });
 
+// file upload route
+app.post("/upload", verifyJWT, upload.single("file"), async (req, res) => {
+  const { file_name, signFile, selectedFileType, upload_by, upload_by_id, upload_by_email } =
+    req.body;
 
+  try {
+    console.log(req.file);
+    console.log(file_name);
+    // Move the uploaded file to the destination folder
+    await fs.renameSync(
+      req.file.path,
+      path.join("uploads", `${file_name}.${selectedFileType}`)
+    );
+
+    const fileSize = req.file.size.toFixed(3);
+
+    const { error } = await supabase.from("my_files").insert({
+      file_name: file_name,
+      file_address: `./uploads/${file_name}.${selectedFileType}`,
+      is_signed: signFile,
+      uploaded_by: upload_by,
+      file_type: selectedFileType,
+      file_size: fileSize,
+      uploader_id: upload_by_id,
+      uploader_email: upload_by_email
+    });
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.json({ message: "File uploaded successfully!", filename: file_name });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error uploading file" });
+  }
+});
+
+// start server
 const port = process.env.PORT || 3001;
 app.listen(port, () => console.log(`Server listening on port ${port}`));
