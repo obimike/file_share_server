@@ -107,6 +107,27 @@ const verifyJWT = (req, res, next) => {
   }
 };
 
+const auditLog = async ({
+  eventType,
+  doneBy,
+  fileType,
+  fileSize,
+  fileName,
+}) => {
+  const { error } = await supabase.from("audit_log").insert({
+    event_type: eventType,
+    done_by: doneBy,
+    file_type: fileType,
+    file_size: fileSize,
+    file_name: fileName,
+  });
+
+  if (error) {
+    console.log(error);
+    return res.status(400).json({ error: error.message });
+  }
+};
+
 // check if user is logged in
 app.get("/protected", verifyJWT, (req, res) => {
   // Access user ID from req.user
@@ -127,12 +148,16 @@ app.post("/logout", async (req, res) => {
 
 // file upload route
 app.post("/upload", verifyJWT, upload.single("file"), async (req, res) => {
-  const { file_name, signFile, selectedFileType, upload_by, upload_by_id, upload_by_email } =
-    req.body;
+  const {
+    file_name,
+    signFile,
+    selectedFileType,
+    upload_by,
+    upload_by_id,
+    upload_by_email,
+  } = req.body;
 
   try {
-    console.log(req.file);
-    console.log(file_name);
     // Move the uploaded file to the destination folder
     await fs.renameSync(
       req.file.path,
@@ -149,12 +174,20 @@ app.post("/upload", verifyJWT, upload.single("file"), async (req, res) => {
       file_type: selectedFileType,
       file_size: fileSize,
       uploader_id: upload_by_id,
-      uploader_email: upload_by_email
+      uploader_email: upload_by_email,
     });
 
     if (error) {
       return res.status(400).json({ error: error.message });
     }
+
+    await auditLog({
+      eventType: "file_uploaded",
+      doneBy: upload_by,
+      fileType: selectedFileType,
+      fileSize: fileSize,
+      fileName: file_name,
+    });
 
     res.json({ message: "File uploaded successfully!", filename: file_name });
   } catch (error) {
