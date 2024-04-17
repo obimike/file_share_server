@@ -89,7 +89,7 @@ app.post("/login", async (req, res) => {
 const verifyJWT = (req, res, next) => {
   const authHeader = req.headers.authorization;
 
-  console.log(authHeader);
+  // console.log(authHeader);
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -196,6 +196,80 @@ app.post("/upload", verifyJWT, upload.single("file"), async (req, res) => {
   }
 });
 
+// Route to select log from the audit_log table
+app.get("/log", async (req, res) => {
+  try {
+    // Select all files from the audit_log table
+    const { data, error } = await supabase.from("audit_log").select("*");
+
+    if (error) {
+      throw error;
+    }
+
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("Error selecting files from audit_log:", error.message);
+    res.status(500).send("Internal server error");
+  }
+});
+
+// Route to select files from the my_files table
+app.get("/files", async (req, res) => {
+  try {
+    // Select all files from the audit_log table
+    const { data, error } = await supabase.from("my_files").select("*");
+
+    if (error) {
+      throw error;
+    }
+
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("Error selecting files from audit_log:", error.message);
+    res.status(500).send("Internal server error");
+  }
+});
+
+// Route to select files from the my_files table
+app.delete('/delete?:id', async (req, res) => {
+  const { id } = req.params;
+
+  console.log(id);
+
+  const fileStoragePath = path.join(__dirname, 'uploads');
+
+  try {
+    // 1. Delete file record from Supabase
+    const { data, error: deleteError } = await supabase
+      .from('my_files')
+      .delete()
+      .eq('id', id);
+
+    if (deleteError) {
+      throw new Error(`Supabase delete error: ${deleteError.message}`);
+    }
+
+    if (data.data.length === 0) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    // 2. Extract file path from Supabase data (replace with your column name)
+    const filePath = data.data[0].file_address; // Assuming a 'file_path' column
+
+    console.log(filePath);
+
+    // 3. Construct full file path based on storage location
+    const fullFilePath = path.join(fileStoragePath, filePath);
+
+    // 4. Delete the file from the folder
+    await fs.promises.unlink(fullFilePath);
+
+    res.json({ message: 'File deleted successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error deleting file' });
+  }
+});
 // start server
 const port = process.env.PORT || 3001;
 app.listen(port, () => console.log(`Server listening on port ${port}`));
