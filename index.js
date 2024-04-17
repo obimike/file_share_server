@@ -231,38 +231,27 @@ app.get("/files", async (req, res) => {
 });
 
 // Route to select files from the my_files table
-app.delete('/delete?:id', async (req, res) => {
-  const { id } = req.params;
+app.delete('/delete', async (req, res) => {
+  
+  console.log("delete route");
+  console.log(req.body);
 
-  console.log(id);
-
-  const fileStoragePath = path.join(__dirname, 'uploads');
+  const { file_id , file_path} = req.body;
 
   try {
-    // 1. Delete file record from Supabase
-    const { data, error: deleteError } = await supabase
+    // Delete file record from Supabase DB
+    const {error: deleteError } = await supabase
       .from('my_files')
       .delete()
-      .eq('id', id);
+      .eq('id', file_id).single();
 
     if (deleteError) {
       throw new Error(`Supabase delete error: ${deleteError.message}`);
     }
 
-    if (data.data.length === 0) {
-      return res.status(404).json({ message: 'File not found' });
-    }
-
-    // 2. Extract file path from Supabase data (replace with your column name)
-    const filePath = data.data[0].file_address; // Assuming a 'file_path' column
-
-    console.log(filePath);
-
-    // 3. Construct full file path based on storage location
-    const fullFilePath = path.join(fileStoragePath, filePath);
-
-    // 4. Delete the file from the folder
-    await fs.promises.unlink(fullFilePath);
+  
+    // Delete the file from the folder
+    await fs.promises.unlink(file_path);
 
     res.json({ message: 'File deleted successfully' });
   } catch (error) {
