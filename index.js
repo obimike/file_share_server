@@ -36,6 +36,14 @@ app.post("/signup", async (req, res) => {
       },
     });
 
+    const { error: storeUserError } = await supabase
+      .from("users")
+      .insert({ email: email, display_name: displayName });
+
+    if (storeUserError) {
+      return res.status(400).json({ error: storeUserError.message });
+    }
+
     if (error) {
       return res.status(400).json({ error: error.message });
     }
@@ -175,6 +183,7 @@ app.post("/upload", verifyJWT, upload.single("file"), async (req, res) => {
       file_size: fileSize,
       uploader_id: upload_by_id,
       uploader_email: upload_by_email,
+      shared_with: [upload_by_email]
     });
 
     if (error) {
@@ -197,7 +206,7 @@ app.post("/upload", verifyJWT, upload.single("file"), async (req, res) => {
 });
 
 // Route to select log from the audit_log table
-app.get("/log", async (req, res) => {
+app.get("/logs", async (req, res) => {
   try {
     // Select all files from the audit_log table
     const { data, error } = await supabase.from("audit_log").select("*");
@@ -231,32 +240,92 @@ app.get("/files", async (req, res) => {
 });
 
 // Route to select files from the my_files table
-app.delete('/delete', async (req, res) => {
-  
+app.delete("/delete", async (req, res) => {
   console.log("delete route");
   console.log(req.body);
 
-  const { file_id , file_path} = req.body;
+  const { file_id, file_path } = req.body;
 
   try {
     // Delete file record from Supabase DB
-    const {error: deleteError } = await supabase
-      .from('my_files')
+    const { error: deleteError } = await supabase
+      .from("my_files")
       .delete()
-      .eq('id', file_id).single();
+      .eq("id", file_id)
+      .single();
 
     if (deleteError) {
       throw new Error(`Supabase delete error: ${deleteError.message}`);
     }
 
-  
     // Delete the file from the folder
     await fs.promises.unlink(file_path);
 
-    res.json({ message: 'File deleted successfully' });
+    res.json({ message: "File deleted successfully" });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Error deleting file' });
+    res.status(500).json({ message: "Error deleting file" });
+  }
+});
+
+// Route to share file with email
+app.post("/share", async (req, res) => {
+  try {
+    const { email, fileId } = req.body.data;
+
+    console.log("Sharing file with ", email);
+
+    const { data, error } = await supabase
+      .from("users")
+      .select("email")
+      .eq("email", email)
+      .single();
+
+      console.log(error);
+
+    if (data === null) {
+      return res
+        .status(401)
+        .json({ message: "User does not have an account." });
+    }
+
+    // Check if email already exists in the column shared_with array field
+    const { data: file, error: fileError } = await supabase
+      .from("my_files")
+      .select("shared_with")
+      .eq("id", fileId)
+      .contains("shared_with", email)
+      .single();
+
+    if (fileError) {
+      console.log(fileError);
+      return res.status(403).json({ message: "Error sharing file" });
+    }
+
+    if (!file) {
+      return res.status(404).json({ error: "File not found" });
+    }
+
+    // if (file.shared_with == null) {
+    //   // Add email to the column array field
+    //   const updatedFile = await supabase
+    //     .from("files")
+    //     .update({ shared_with: [...file.shared_with, email] })
+    //     .eq("id", fileId);
+
+    //   if (updatedFile.error) {
+    //     throw updatedFile.error;
+    //   }
+    // } else if (file.shared_with.includes(email)) {
+    //   return res
+    //     .status(400)
+    //     .json({ error: "Email already shared with this file" });
+    // }
+
+    res.status(200).json({ message: "File shared successfully" });
+  } catch (error) {
+    console.error("Error sharing file:", error.message);
+    res.status(500).send("Internal server error");
   }
 });
 // start server
