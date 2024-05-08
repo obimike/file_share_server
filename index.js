@@ -272,35 +272,95 @@ app.post("/verify_file", async (req, res) => {
     return;
   }
 
-  try {
-    const fileData = fs.readFileSync(file_address);
+  setTimeout(async () => {
+    try {
+      const fileData = fs.readFileSync(file_address);
 
-    const storedFileSignature = await sodium.crypto_sign_detached(
-      fileData,
-      retrieveUint8ArrayFromBase64(private_key)
-    );
+      const storedFileSignature = await sodium.crypto_sign_detached(
+        fileData,
+        retrieveUint8ArrayFromBase64(private_key)
+      );
 
-    console.log(storedFileSignature);
+      console.log(storedFileSignature);
 
-    const isVerified = sodium.crypto_sign_verify_detached(
-      fileSignature,
-      fileData,
-      retrieveUint8ArrayFromBase64(public_key)
-    );
+      const isVerified = sodium.crypto_sign_verify_detached(
+        fileSignature,
+        fileData,
+        retrieveUint8ArrayFromBase64(public_key)
+      );
 
-    if (isVerified) {
-      res.send("is verified. It has not been edited or modified.");
-    } else {
-      res.status(400).json({
-        error:
-          "File verification failed. It might have been edited or modified.",
-      });
+      if (isVerified) {
+        res.send("is verified. It has not been edited or modified.");
+      } else {
+        res.status(400).json({
+          error:
+            "File verification failed. It might have been edited or modified.",
+        });
+      }
+    } catch (error) {
+      console.error("Error verifying file signature:", error);
+      res
+        .status(400)
+        .json({ verified: false, error: "File signature verification failed" });
     }
+  }, 5000);
+});
+
+app.post("/download", async (req, res) => {
+  const { file_address, file_name } = req.body.data;
+
+  // Read the signed file
+  if (!fs.existsSync(file_address)) {
+    res.status(404).json({ error: "File not found" });
+    return;
+  }
+
+  try {
+    // Send the file for download
+    res.download(file_address, file_name, (err) => {
+      if (err) {
+        // Handle error
+        console.error("Error downloading file:", err);
+        res.status(500).send("Error downloading file");
+      } else {
+        res.send("File downloaded successfully");
+      }
+    });
   } catch (error) {
-    console.error("Error verifying file signature:", error);
-    res
-      .status(400)
-      .json({ verified: false, error: "File signature verification failed" });
+    console.error("Error downloading file :", error);
+    res.status(400).json({ error: "File download failed" });
+  }
+});
+
+// // Route to change user's full name
+app.post("/change_full_name", async (req, res) => {
+  const { full_name, user_id } = req.body.data;
+
+  console.log(user_id);
+
+  try {
+    const { data: authData, error: authError } = await supabase.auth.updateUser(
+      {
+        data: { display_name: full_name },
+      }
+    );
+
+    // // updating user table
+    // const { data, error } = await supabase
+    //   .from("user")
+    //   .update({ display_name: full_name })
+    //   .eq("user_uuid", user_id)
+
+    if (authError) {
+      throw authError;
+    }
+
+    console.log(authData);
+
+    res.status(200).json(authData);
+  } catch (error) {
+    console.error("Error updating full name: ", error);
+    res.status(500).send("Internal server error");
   }
 });
 
@@ -485,47 +545,6 @@ app.post("/add_log", async (req, res) => {
     });
 
     res.json({ message: "Logged successfully!" });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: error });
-  }
-});
-
-app.get("/test_upload", async (req, res) => {
-  try {
-    await sodium.ready;
-    // Generate Key
-    const { publicKey, privateKey } = await generateKeys();
-    pubKey = publicKey;
-    priKey = privateKey;
-
-    // sign file
-    const fileData = "The quick brown fox jumped over the lazy dog.";
-    const signature = await sodium.crypto_sign_detached(fileData, privateKey);
-
-    fileSignature = signature;
-
-    res.send(signature);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: error });
-  }
-});
-
-app.get("/test_verify", async (req, res) => {
-  try {
-    // get the file from storage and  sign it with the same private key
-    const fileData = "The quick brown fox jumped over the lazy dog.";
-
-    const { publicKey } = await generateKeys();
-
-    const isVerified = sodium.crypto_sign_verify_detached(
-      fileSignature,
-      fileData,
-      publicKey
-    );
-
-    res.json({ message: isVerified });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: error });
