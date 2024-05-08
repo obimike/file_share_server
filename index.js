@@ -332,38 +332,6 @@ app.post("/download", async (req, res) => {
   }
 });
 
-// // Route to change user's full name
-app.post("/change_full_name", async (req, res) => {
-  const { full_name, user_id } = req.body.data;
-
-  console.log(user_id);
-
-  try {
-    const { data: authData, error: authError } = await supabase.auth.updateUser(
-      {
-        data: { display_name: full_name },
-      }
-    );
-
-    // // updating user table
-    // const { data, error } = await supabase
-    //   .from("user")
-    //   .update({ display_name: full_name })
-    //   .eq("user_uuid", user_id)
-
-    if (authError) {
-      throw authError;
-    }
-
-    console.log(authData);
-
-    res.status(200).json(authData);
-  } catch (error) {
-    console.error("Error updating full name: ", error);
-    res.status(500).send("Internal server error");
-  }
-});
-
 // Route to select log from the audit_log table
 app.get("/logs/:email", async (req, res) => {
   const arrayColumnName = "email";
