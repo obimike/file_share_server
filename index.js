@@ -7,6 +7,7 @@ const fs = require("fs");
 const multer = require("multer");
 const path = require("path");
 const sodium = require("libsodium-wrappers");
+const { generateKeys, retrieveUint8ArrayFromBase64 } = require("./ed25519");
 
 const upload = multer({ dest: "uploads/" });
 const app = express();
@@ -22,23 +23,24 @@ const supabase = createClient(
 
 let fileSignature = null;
 
-const generateKeys = async () => {
-  await sodium.ready;
-  const keypair = await sodium.crypto_sign_keypair();
-  return {
-    publicKey: keypair.publicKey,
-    privateKey: keypair.privateKey,
-  };
-};
-
-const retrieveUint8ArrayFromBase64 = (base64String) => {
-  const charArray = atob(base64String).split("");
-  const uint8Array = new Uint8Array(charArray.length);
-  for (let i = 0; i < charArray.length; i++) {
-    uint8Array[i] = charArray[i].charCodeAt(0);
+// Helper function to get content type based on file extension
+function getContentType(ext) {
+  switch (ext) {
+    case "pdf":
+      return "application/pdf";
+    case "txt":
+      return "text/plain";
+    case "docx":
+      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "xlsx":
+      return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case "mp3":
+      return "audio/mpeg";
+    // Add more cases for other file types as needed
+    default:
+      return "application/octet-stream";
   }
-  return uint8Array;
-};
+}
 
 // Create a new user
 app.post("/signup", async (req, res) => {
@@ -135,6 +137,7 @@ const verifyJWT = (req, res, next) => {
   }
 };
 
+// audit record function
 const auditLog = async ({
   eventType,
   doneBy,
@@ -176,7 +179,7 @@ app.post("/logout", async (req, res) => {
 });
 
 // file upload route
-app.post("/upload", verifyJWT, upload.single("file"), async (req, res) => {
+app.post("/upload", upload.single("file"), async (req, res) => {
   const {
     file_name,
     signFile,
@@ -307,7 +310,8 @@ app.post("/verify_file", async (req, res) => {
 });
 
 app.post("/download", async (req, res) => {
-  const { file_address, file_name } = req.body.data;
+  const { file_address, file_name, file_ext, file_id, display_name } =
+    req.body.data;
 
   // Read the signed file
   if (!fs.existsSync(file_address)) {
@@ -315,17 +319,36 @@ app.post("/download", async (req, res) => {
     return;
   }
 
+  console.log("download filepath ", file_address);
+  console.log("download fileName ", file_name);
+
   try {
     // Send the file for download
-    res.download(file_address, file_name, (err) => {
-      if (err) {
-        // Handle error
-        console.error("Error downloading file:", err);
-        res.status(500).send("Error downloading file");
-      } else {
-        res.send("File downloaded successfully");
-      }
+    // res.download(file_address, file_name);
+
+    // fetch file details
+    const file = await supabase
+      .from("my_files")
+      .select("*")
+      .eq("id", file_id)
+      .single();
+
+    const contentType = getContentType(file_ext);
+
+    const data = await fs.promises.readFile(file_address);
+    res.setHeader("Content-Disposition", `attachment; filename="${file_name}"`); // Set download filename
+    res.setHeader("Content-Type", contentType); // Set generic binary content type
+
+    await auditLog({
+      eventType: "File Download",
+      doneBy: display_name,
+      fileType: file_ext,
+      fileSize: file.data.file_size,
+      fileName: file.data.file_name,
+      email: file.data.shared_with,
     });
+
+    res.send(data);
   } catch (error) {
     console.error("Error downloading file :", error);
     res.status(400).json({ error: "File download failed" });
@@ -390,7 +413,6 @@ app.delete("/delete", async (req, res) => {
 
   try {
     // fetch file details
-
     const file = await supabase
       .from("my_files")
       .select("*")
@@ -497,6 +519,8 @@ app.post("/share", async (req, res) => {
     res.status(500).send("Internal server error");
   }
 });
+
+
 
 app.post("/add_log", async (req, res) => {
   const { eventType, doneBy, fileType, fileSize, fileName, sharedWith } =
